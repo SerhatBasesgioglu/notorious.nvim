@@ -13,6 +13,17 @@ local function random_id()
 	return table.concat(t)
 end
 
+local function ensure_normal_window()
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		local buf = vim.api.nvim_win_get_buf(win)
+		if vim.api.nvim_buf_get_option(buf, "buftype") == "" then
+			vim.api.nvim_set_current_win(win)
+			return
+		end
+	end
+	vim.cmd("new")
+end
+
 function M.new_note()
 	local title = vim.fn.input("Title: ")
 	if title == "" then
@@ -43,8 +54,11 @@ function M.new_note()
 		"",
 	}
 
+	ensure_normal_window()
 	vim.cmd("e " .. path)
 	vim.api.nvim_buf_set_lines(0, 0, -1, false, header)
+	local last_line = vim.api.nvim_buf_line_count(0)
+	vim.api.nvim_win_set_cursor(0, { last_line, 0 })
 	print("Note Created: " .. path)
 end
 
