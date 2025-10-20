@@ -5,55 +5,65 @@ local cfg = require("notorious.config")
 local notes_dir = cfg.notes_dir
 local extension = cfg.extension
 
-local function ensure_normal_window()
-	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		local buf = vim.api.nvim_win_get_buf(win)
-		if vim.api.nvim_buf_get_option(buf, "buftype") == "" then
-			vim.api.nvim_set_current_win(win)
-			return
-		end
-	end
-	vim.cmd("new")
+local function list_notes()
+  local files = vim.fn.globpath(notes_dir, "**" .. extension, false, true)
+  local names = {}
+  for _, f in ipairs(files) do
+    local name = vim.fn.fnamemodify(f, ":t:r")
+    table.insert(names, { text = name, file = f })
+  end
+  return names
 end
 
-function M.new_note()
-	local title = vim.fn.input("Title: ")
-	if title == "" then
-		print("Cancelled")
-		return
-	end
+local function find_note(title)
+  local slug = title:gsub("%s+", "-")
+  local path = notes_dir .. "/" .. slug .. extension
+  if vim.fn.filereadable(path) == 1 then
+    return path
+  end
+  return nil
+end
 
-	vim.fn.mkdir(notes_dir, "p")
+function M.pick_or_create_new_note()
+  local notes = list_notes()
+  Snacks.picker.pick({
+    items = notes,
+    title = "Select or Create New Note",
+    confirm = function(picker, item)
+      local query = picker.input.filter.pattern
+      picker:close()
+      if item then
+        print(item.text)
+        vim.cmd("edit " .. item.file)
+      else
+        local title = vim.fn.fnamemodify(query, ":t:r")
+        local new_file = notes_dir .. "/" .. title .. extension
 
-	local filename = string.format("%s%s", title:gsub("%s+", "-"):lower(), extension)
-	local path = notes_dir .. "/" .. filename
+        if vim.fn.filereadable(new_file) == 0 then
+          vim.fn.writefile({}, new_file)
+        end
+        vim.cmd("edit " .. new_file)
 
-	if vim.fn.filereadable(path) == 1 then
-		vim.notify("Note already exists: " .. path, vim.log.levels.ERROR)
-		return
-	end
+        local header = {
+          "---",
+          "title: " .. title,
+          "type: " .. "reference",
+          "status: " .. "inprogress",
+          "createdAt: " .. os.date("%Y-%m-%dT%H:%M:%S"),
+          "updatedAt: " .. os.date("%Y-%m-%dT%H:%M:%S"),
+          "related: ",
+          "---",
+        }
 
-	local header = {
-		"---",
-		"title: " .. title,
-		"tags: []",
-		"created " .. os.date("%Y-%m-%d %H:%M"),
-		"---",
-		"",
-		"# " .. title,
-		"",
-	}
-
-	ensure_normal_window()
-	vim.cmd("e " .. path)
-	vim.api.nvim_buf_set_lines(0, 0, -1, false, header)
-	local last_line = vim.api.nvim_buf_line_count(0)
-	vim.api.nvim_win_set_cursor(0, { last_line, 0 })
-	print("Note Created: " .. path)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, header)
+        vim.cmd("write")
+      end
+    end,
+  })
 end
 
 function M.setup()
-	vim.api.nvim_create_user_command("NotoriousNew", M.new_note, { desc = "Craete new note" })
+  vim.api.nvim_create_user_command("NotoriousNew", M.pick_or_create_new_note, { desc = "Craete new note" })
 end
 
 return M
